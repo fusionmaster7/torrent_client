@@ -1,4 +1,7 @@
 const fs = require("fs");
+const bencode = require("bencode");
 
-const torrent = fs.readFileSync("./puppy.torrent");
-console.log(torrent.toString("utf-8"));
+const torrentBuffer = fs.readFileSync("./puppy.torrent");
+const torrent = bencode.decode(torrentBuffer);
+
+console.log(torrent.announce.toString("utf-8"));
