@@ -3,6 +3,9 @@ const Buffer = require("buffer").Buffer;
 const urlParse = require("url").parse;
 const crypto = require("crypto");
 
+const torrentParser = require("./torrent-parser");
+const util = require("./util");
+
 //Helper function to send a UDP connection request
 const udpSend = (socket, message, rawUrl, callback = () => {}) => {
   const url = urlParse(rawUrl);
@@ -27,11 +30,66 @@ const buildConnectReq = () => {
 };
 
 //Helper function to parse a connection request
-const parseConnectResp = (res) => {
+const parseConnectReq = (res) => {
   return {
     action: res.readUInt32BE(0),
     transactionId: res.readUInt32BE(4),
     connectionId: res.slice(8),
+  };
+};
+
+//Helper function to build announce request
+const buildAnnounceReq = (connectionId, torrent, port = 6881) => {
+  const buff = Buffer.allocUnsafe(98);
+
+  //Connection Id
+  connectionId.copy(buff, 0);
+  //Action
+  buff.writeUInt32BE(1, 8);
+  //Transaction id
+  crypto.randomBytes(4).copy(buff, 12);
+  //Info hash
+  torrentParser.infoHash(torrent).copy(buff, 16);
+  //Peer Id
+  util.genId().copy(buff, 36);
+  //Downloaded
+  Buffer.alloc(8).copy(buff, 56);
+  //Left
+  torrentParser.size(torrent).copy(buff, 64);
+  //Uploaded
+  Buffer.alloc(8).copy(buff, 72);
+  //Event
+  buff.writeUInt32BE(0, 80);
+  //IP address
+  buff.writeUInt32BE(0, 80);
+  //Key
+  crypto.randomBytes(4).copy(buff, 88);
+  //Num want
+  buff.writeInt32BE(-1, 92);
+  //Port
+  buff.writeUInt32BE(port, 96);
+};
+
+//Function to parse announcement request
+const parseAnnounceReq = (res) => {
+  const group = (iterable, groupSize) => {
+    let groups = [];
+    for (let i = 0; i < iterable.size; i += groupSize) {
+      groups.push(iterable.slice(i, i + groupSize));
+    }
+    return groups;
+  };
+  return {
+    action: res.readUInt32BE(0),
+    transactionId: res.readUInt32BE(4),
+    leechers: res.readUInt32BE(8),
+    seeders: res.readUInt32BE(12),
+    peers: group(res.slice(20), 6).map((address) => {
+      return {
+        ip: address.slice(0, 4).join("."),
+        port: address.readUInt32BE(4),
+      };
+    }),
   };
 };
 
@@ -43,13 +101,13 @@ const getPeers = (torrent, callback) => {
   socket.on("message", (res) => {
     if (responseType(res) === "connect") {
       //Receive and parse connect response
-      const connectResp = parseConnectResp(res);
+      const connectResp = parseConnectReq(res);
       //Send announce request
-      const announceReq = buildAnnounceReq(connectResp.connectionId);
+      const announceReq = buildAnnounceReq(connectResp.connectionId, torrent);
       udpSend(socket, announceReq, url);
     } else if (responseType(res) === "announce") {
       //Parse announce response
-      const announceResp = parseAnnounceResp(res);
+      const announceResp = parseAnnounceReq(res);
       //Pass peers to callback
       callback(announceResp);
     }
