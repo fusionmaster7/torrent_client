@@ -1,6 +1,7 @@
 const dgram = require("dgram");
 const Buffer = require("buffer").Buffer;
 const urlParse = require("url").parse;
+const crypto = require("crypto");
 
 //Helper function to send a UDP connection request
 const udpSend = (socket, message, rawUrl, callback = () => {}) => {
@@ -8,8 +9,30 @@ const udpSend = (socket, message, rawUrl, callback = () => {}) => {
   socket.send(message, 0, message.length, url.port, url.host, callback);
 };
 
+//Helper function to build a connection request
 const buildConnectReq = () => {
-  /*.....*/
+  const buff = Buffer.alloc(16);
+
+  //Writing Connection ID
+  buff.writeUInt32BE(0x417, 0);
+  buff.writeUInt32BE(0x27101980, 4);
+
+  //Writing action
+  buff.writeUInt32BE(0, 8);
+
+  //Writing Transaction ID
+  crypto.randomBytes(4).copy(buff, 12);
+
+  return buff;
+};
+
+//Helper function to parse a connection request
+const parseConnectResp = (res) => {
+  return {
+    action: res.readUInt32BE(0),
+    transactionId: res.readUInt32BE(4),
+    connectionId: res.slice(8),
+  };
 };
 
 const getPeers = (torrent, callback) => {
