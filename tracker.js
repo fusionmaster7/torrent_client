@@ -93,6 +93,16 @@ const parseAnnounceReq = (res) => {
   };
 };
 
+//Function to get Response type
+const responseType = (res) => {
+  const action = res.readUInt32BE(0);
+  if (action === 0) {
+    return "connect";
+  } else {
+    return "announce";
+  }
+};
+
 const getPeers = (torrent, callback) => {
   const socket = dgram.createSocket("udp4");
   const url = torrent.announce.toString("utf-8");
