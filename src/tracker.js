@@ -4,7 +4,7 @@ const urlParse = require("url").parse;
 const crypto = require("crypto");
 
 const torrentParser = require("./torrent-parser");
-const util = require("./util");
+const util = require("../util");
 
 //Helper function to send a UDP connection request
 const udpSend = (socket, message, rawUrl, callback = () => {}) => {
