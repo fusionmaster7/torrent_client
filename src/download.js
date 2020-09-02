@@ -1,6 +1,7 @@
 const net = require("net");
 const Buffer = require("buffer").Buffer;
 const { getPeers } = require("./tracker");
+const message = require("./message");
 
 const onWholeMessage = (socket, callback) => {
   const savedBuf = Buffer.alloc(0);
@@ -18,15 +19,26 @@ const onWholeMessage = (socket, callback) => {
 };
 
 //Utility function to download files from peers
-const download = (peer) => {
+const download = (peer, torrent) => {
   const socket = new net.Socket();
   socket.on("error", console.log);
   socket.connect(peer.port, peer.ip, () => {
-    /*socket.write(....)*/
+    socket.write(message.buildHandshake(torrent));
   });
-  onWholeMessage(socket, (data) => {
-    /*RESPONSE HERE*/
-  });
+  onWholeMessage(socket, (msg) => msgHandler(msg, socket));
+};
+
+const msgHandler = (msg, socket) => {
+  if (isHandshake(msg)) {
+    socket.write(message.buildInterested());
+  }
+};
+
+const isHandshake = (msg) => {
+  return (
+    msg.length === msg.readUInt8(0) + 49 &&
+    msg.toString("utf-8", 1) === "BitTorrent Protocol"
+  );
 };
 
 const downloadFiles = (torrent) => {
