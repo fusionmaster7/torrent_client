@@ -1,5 +1,6 @@
 const net = require("net");
 const Buffer = require("buffer").Buffer;
+const fs = require("fs");
 const { getPeers } = require("./tracker");
 const message = require("./message");
 const Pieces = require("./Pieces");
@@ -24,14 +25,16 @@ const onWholeMessage = (socket, callback) => {
 };
 
 //Utility function to download files from peers
-const download = (peer, torrent, pieces) => {
+const download = (peer, torrent, pieces, file) => {
   const socket = new net.Socket();
   socket.on("error", console.log);
   socket.connect(peer.port, peer.ip, () => {
     socket.write(message.buildHandshake(torrent));
   });
   const queue = new Queue(torrent);
-  onWholeMessage(socket, (msg) => msgHandler(msg, socket, pieces, queue));
+  onWholeMessage(socket, (msg) =>
+    msgHandler(msg, socket, pieces, queue, torrent, file)
+  );
 };
 
 const requestPiece = (socket, pieces, queue) => {
@@ -66,9 +69,22 @@ const bitfieldHandler = (socket, pieces, queue, payload) => {
   if (queueEmpty) requestPiece(socket, pieces, queue);
 };
 
-const pieceHandler = (payload, socket, requested, queue) => {
-  queue.shift();
-  requestPiece(socket, requested, queue);
+const pieceHandler = (socket, pieces, queue, torrent, file, pieceResp) => {
+  pieces.addReceived(pieceResp);
+
+  const offset =
+    pieceResp.index * torrent.info["piece length"] + pieceResp.begin;
+  fs.write(file, pieceResp.block, 0, pieceResp.block.length, offset, () => {});
+
+  if (pieces.isDone()) {
+    console.log("DONE!");
+    socket.end();
+    try {
+      fs.closeSync(file);
+    } catch (e) {}
+  } else {
+    requestPiece(socket, pieces, queue);
+  }
 };
 
 const chokeHandler = (socket) => {
@@ -80,7 +96,7 @@ const unchokeHandler = (socket, pieces, queue) => {
   requestPiece(socket, pieces, queue);
 };
 
-const msgHandler = (msg, socket, pieces, queue) => {
+const msgHandler = (msg, socket, pieces, queue, torrent, file) => {
   if (isHandshake(msg)) {
     socket.write(message.buildInterested());
   } else {
@@ -89,7 +105,8 @@ const msgHandler = (msg, socket, pieces, queue) => {
     if (m.id === 1) unchokeHandler(socket, pieces, queue);
     if (m.id === 4) haveHandler(socket, pieces, queue, m.payload);
     if (m.id === 5) bitfieldHandler(socket, pieces, queue, m.payload);
-    if (m.id === 7) pieceHandler(m.payload);
+    if (m.id === 7)
+      pieceHandler(socket, pieces, queue, torrent, file, m.payload);
   }
 };
 
@@ -100,10 +117,11 @@ const isHandshake = (msg) => {
   );
 };
 
-const downloadFiles = (torrent) => {
+const downloadFiles = (torrent, path) => {
   tracker.getPeers(torrent, (peers) => {
     const pieces = new Pieces(torrent);
-    peers.forEach((peer) => download(peer, torrent, pieces));
+    const file = fs.openSync(path, "w");
+    peers.forEach((peer) => download(peer, torrent, pieces, file));
   });
 };
 
