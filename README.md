@@ -14,7 +14,7 @@ npm install
 
 ## Usage
 
-#For Development
+# For Development
 ```bash
 npm run dev
 ```
